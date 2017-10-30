@@ -1,7 +1,10 @@
-import {self, timeout, sanitizeError, stringify, objectsEqual, traversePath, SCOPE_SYMBOL, TEST_SYMBOL} from './util.mjs'
+import {timeout, sanitizeError, stringify, objectsEqual, traversePath, escapeHtml} from './util.mjs'
+import {SCOPE_SYMBOL, TEST_SYMBOL} from './util.mjs'
 import {testsRoot} from './api.mjs'
 
 
+
+var separatorLength = 30
 
 // EXECUTION
 
@@ -15,8 +18,8 @@ export async function execute() {
 
 async function executeScope(scopeName, tests) {
 	if (scopeName) {
-		console.log('#########################')
-		console.log('running scope:', scopeName)
+		console.log('#'.repeat(separatorLength))
+		console.log('# scope:', scopeName)
 	}
 	var output = {}
 	for (var [testName, test] of Object.entries(tests)) {
@@ -29,15 +32,15 @@ async function executeScope(scopeName, tests) {
 }
 
 async function executeTest(testName, test) {
-	console.log('-------------------------')
-	console.log('running test:', testName)
+	console.log('-'.repeat(separatorLength))
+	console.log('running:', testName)
 	try {
-		var result = await test()
-		console.log(result)
-		return result
+		var output = await test()
+		console.log('output: ', output)
+		return output
 	} catch(err) {
 		//console.error(`Error occured while running '${testName}'`)
-		console.error(err)
+		console.error('output: ', err)
 		return sanitizeError(err)
 	}
 }
@@ -76,9 +79,14 @@ export var render = renderScope.bind(undefined, undefined)
 function renderScope(scopeName, scope, path = []) {
 	var fragment = document.createDocumentFragment()
 	if (scopeName) {
-		var nameNode = document.createElement('h4')
+		var nameNode = document.createElement(`h${path.length}`)
 		nameNode.textContent = scopeName
 		fragment.appendChild(nameNode)
+		var block = document.createElement('div')
+		block.style.paddingLeft = '1rem'
+		fragment.appendChild(block)
+	} else {
+		var block = fragment
 	}
 	for (var [name, result] of Object.entries(scope)) {
 		let symbol = name.slice(0, 2)
@@ -87,35 +95,29 @@ function renderScope(scopeName, scope, path = []) {
 			var testFragment = renderScope(name, result, [...path, name])
 		else if (symbol === TEST_SYMBOL)
 			var testFragment = renderTest(name, result, [...path, name])
-		fragment.appendChild(testFragment)
+		block.appendChild(testFragment)
 	}
 	return fragment
 }
 
 function renderTest(testName, testResult, path) {
-	var fragment = document.createDocumentFragment()
-	var nameNode = document.createElement('div')
-	nameNode.textContent = testName
-	nameNode.style.color = testResult === true ? 'green' : 'red'
-	fragment.appendChild(nameNode)
-	if (testResult === true)
-		return fragment
-	var [actualValue, desiredValue] = testResult
-	var codePre = document.createElement('pre')
-	var test = traversePath(path, testsRoot)
-	codePre.textContent = test.toString()
-	var div1 = document.createElement('div')
-	var div2 = document.createElement('div')
-	div1.textContent = 'result is:'
-	div2.textContent = 'should be:'
-	var pre1 = document.createElement('pre')
-	var pre2 = document.createElement('pre')
-	pre1.textContent = stringify(actualValue)
-	pre2.textContent = stringify(desiredValue)
-	fragment.appendChild(codePre)
-	fragment.appendChild(div1)
-	fragment.appendChild(pre1)
-	fragment.appendChild(div2)
-	fragment.appendChild(pre2)
+	var fragment = document.createElement('div')
+	var color = testResult === true ? 'green' : 'red'
+	var innerHTML = `<div style="color: ${color}">${testName}</div>`
+	if (testResult !== true) {
+		var [actualValue, desiredValue] = testResult
+		var test = traversePath(path, testsRoot)
+		var testCode = escapeHtml(test.toString())
+		innerHTML += `
+		<div style="padding-left: 1rem">
+			<pre style="color: gray">${testCode}</pre>
+			<div>result is:</div>
+			<pre style="color: darkred">${stringify(actualValue)}</pre>
+			<div>should be:</div>
+			<pre style="color: darkred">${stringify(desiredValue)}</pre>
+		</div>
+		`
+	}
+	fragment.innerHTML = innerHTML
 	return fragment
 }

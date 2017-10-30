@@ -19,6 +19,7 @@ if (isNode) {
 export var SCOPE_SYMBOL = '>|'
 export var TEST_SYMBOL = '#|'
 
+
 export function redirectConsoleTo(logNode) {
 
 	var _log = console.log.bind(console)
@@ -66,12 +67,20 @@ export function stringify(data) {
 		if (data === null)
 			return null
 		if (data && Array.isArray(data))
-			return JSON.stringify(data)
+			return escapeHtml(JSON.stringify(data))
 		else
-			return JSON.stringify(data, null, 2)
+			return escapeHtml(JSON.stringify(data, null, 2))
 	} catch(e) {
 		return '--- unable to stringify ---'
 	}
+}
+
+export function escapeHtml(data) {
+	return data.replace(/&/g, '&amp;')
+			   .replace(/</g, '&lt;')
+			   .replace(/>/g, '&gt;')
+			   .replace(/"/g, '&quot;')
+			   .replace(/'/g, '&apos;')
 }
 
 // TODO: rewrite to to not use JSON

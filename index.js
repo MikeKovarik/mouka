@@ -25,6 +25,7 @@ if (isNode) {
 var SCOPE_SYMBOL = '>|';
 var TEST_SYMBOL = '#|';
 
+
 function redirectConsoleTo(logNode) {
 
 	var _log = console.log.bind(console);
@@ -72,12 +73,20 @@ function stringify(data) {
 		if (data === null)
 			return null
 		if (data && Array.isArray(data))
-			return JSON.stringify(data)
+			return escapeHtml(JSON.stringify(data))
 		else
-			return JSON.stringify(data, null, 2)
+			return escapeHtml(JSON.stringify(data, null, 2))
 	} catch(e) {
 		return '--- unable to stringify ---'
 	}
+}
+
+function escapeHtml(data) {
+	return data.replace(/&/g, '&amp;')
+			   .replace(/</g, '&lt;')
+			   .replace(/>/g, '&gt;')
+			   .replace(/"/g, '&quot;')
+			   .replace(/'/g, '&apos;')
 }
 
 // TODO: rewrite to to not use JSON
@@ -111,6 +120,10 @@ self.it = function(name, test) {
 	currentScope[name] = test;
 };
 
+var separatorLength = 30;
+
+// EXECUTION
+
 async function execute() {
 	try {
 		return executeScope(undefined, testsRoot)
@@ -121,8 +134,8 @@ async function execute() {
 
 async function executeScope(scopeName, tests) {
 	if (scopeName) {
-		console.log('#########################');
-		console.log('running scope:', scopeName);
+		console.log('#'.repeat(separatorLength));
+		console.log('# scope:', scopeName);
 	}
 	var output = {};
 	for (var [testName, test] of Object.entries(tests)) {
@@ -135,15 +148,15 @@ async function executeScope(scopeName, tests) {
 }
 
 async function executeTest(testName, test) {
-	console.log('-------------------------');
-	console.log('running test:', testName);
+	console.log('-'.repeat(separatorLength));
+	console.log('running:', testName);
 	try {
-		var result = await test();
-		console.log(result);
-		return result
+		var output = await test();
+		console.log('output: ', output);
+		return output
 	} catch(err) {
 		//console.error(`Error occured while running '${testName}'`)
-		console.error(err);
+		console.error('output: ', err);
 		return sanitizeError(err)
 	}
 }
@@ -182,9 +195,14 @@ var render = renderScope.bind(undefined, undefined);
 function renderScope(scopeName, scope, path = []) {
 	var fragment = document.createDocumentFragment();
 	if (scopeName) {
-		var nameNode = document.createElement('h4');
+		var nameNode = document.createElement(`h${path.length}`);
 		nameNode.textContent = scopeName;
 		fragment.appendChild(nameNode);
+		var block = document.createElement('div');
+		block.style.paddingLeft = '1rem';
+		fragment.appendChild(block);
+	} else {
+		var block = fragment;
 	}
 	for (var [name, result] of Object.entries(scope)) {
 		let symbol = name.slice(0, 2);
@@ -193,36 +211,30 @@ function renderScope(scopeName, scope, path = []) {
 			var testFragment = renderScope(name, result, [...path, name]);
 		else if (symbol === TEST_SYMBOL)
 			var testFragment = renderTest(name, result, [...path, name]);
-		fragment.appendChild(testFragment);
+		block.appendChild(testFragment);
 	}
 	return fragment
 }
 
 function renderTest(testName, testResult, path) {
-	var fragment = document.createDocumentFragment();
-	var nameNode = document.createElement('div');
-	nameNode.textContent = testName;
-	nameNode.style.color = testResult === true ? 'green' : 'red';
-	fragment.appendChild(nameNode);
-	if (testResult === true)
-		return fragment
-	var [actualValue, desiredValue] = testResult;
-	var codePre = document.createElement('pre');
-	var test = traversePath(path, testsRoot);
-	codePre.textContent = test.toString();
-	var div1 = document.createElement('div');
-	var div2 = document.createElement('div');
-	div1.textContent = 'result is:';
-	div2.textContent = 'should be:';
-	var pre1 = document.createElement('pre');
-	var pre2 = document.createElement('pre');
-	pre1.textContent = stringify(actualValue);
-	pre2.textContent = stringify(desiredValue);
-	fragment.appendChild(codePre);
-	fragment.appendChild(div1);
-	fragment.appendChild(pre1);
-	fragment.appendChild(div2);
-	fragment.appendChild(pre2);
+	var fragment = document.createElement('div');
+	var color = testResult === true ? 'green' : 'red';
+	var innerHTML = `<div style="color: ${color}">${testName}</div>`;
+	if (testResult !== true) {
+		var [actualValue, desiredValue] = testResult;
+		var test = traversePath(path, testsRoot);
+		var testCode = escapeHtml(test.toString());
+		innerHTML += `
+		<div style="padding-left: 1rem">
+			<pre style="color: gray">${testCode}</pre>
+			<div>result is:</div>
+			<pre style="color: darkred">${stringify(actualValue)}</pre>
+			<div>should be:</div>
+			<pre style="color: darkred">${stringify(desiredValue)}</pre>
+		</div>
+		`;
+	}
+	fragment.innerHTML = innerHTML;
 	return fragment
 }
 
@@ -304,6 +316,7 @@ exports.TEST_SYMBOL = TEST_SYMBOL;
 exports.redirectConsoleTo = redirectConsoleTo;
 exports.sanitizeError = sanitizeError;
 exports.stringify = stringify;
+exports.escapeHtml = escapeHtml;
 exports.objectsEqual = objectsEqual;
 exports.traversePath = traversePath;
 exports.setExportName = setExportName;
