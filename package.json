@@ -1,0 +1,25 @@
+{
+  "name": "mouka",
+  "version": "0.1.0",
+  "description": "simple, proprietary, fun javascript test framework for comparative testing",
+  "author": "Mike Kovařík",
+  "license": "MIT",
+  "bin": {
+    "mouka": "./index.js"
+  },
+  "scripts": {
+    "build": "rollup -c",
+    "dev": "rollup -c -w"
+  },
+  "keywords": [
+    "test"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MikeKovarik/mouka.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MikeKovarik/mouka/issues"
+  },
+  "homepage": "https://github.com/MikeKovarik/mouka#readme"
+}
