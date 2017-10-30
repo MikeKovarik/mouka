@@ -1,11 +1,11 @@
 {
   "name": "mouka",
-  "version": "0.1.1",
+  "version": "0.1.5",
   "description": "simple, proprietary, fun javascript test framework for comparative testing",
   "author": "Mike Kovařík",
   "license": "MIT",
   "bin": {
-    "mouka": "./index.js"
+    "mouka": "./cli.js"
   },
   "scripts": {
     "build": "rollup -c",

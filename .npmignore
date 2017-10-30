@@ -1,8 +1,2 @@
-# Ignore everything
-*
-.*
-
-# Except for
-!index.js
-!index.mjs
-!src/*
+logo
+rollup.config.js
