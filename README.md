@@ -5,7 +5,7 @@ Mouka is a Czech word for flour. And it sounds like [mocha](https://github.com/m
 
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/MikeKovarik/mouka/master/logo/logo-small.jpg" alt="Mouka test framework"/>
+  <a href="https://raw.githubusercontent.com/MikeKovarik/mouka/master/logo/logo-full-size.png"><img src="https://raw.githubusercontent.com/MikeKovarik/mouka/master/logo/logo-small.jpg" alt="Mouka test framework"/></a>
 </p>
 
 ## what? why?
