@@ -250,17 +250,41 @@ async function runAsCli() {
 	console.log('runAsCli');
 	// TODO - change 2 to 1
 	var testFileName = process.argv[2];
-	// import test file
+	var runRemotely = process.argv.includes('-r')
+					|| process.argv.includes('--remote')
+					|| !process.argv.includes('-l');
+	if (process.argv.includes('--remote')) {
+		// remove working directory from cli args
+		var rwd = process.argv[process.argv.indexOf('--remote')];
+	} else {
+		// remove working directory for sideloaded UWP apps
+		var rwd = '../bin/Debug/AppX/test';
+	}
+	// origin working directory
+	var owd = process.cwd();
+	// Change cwd if the tests are to be executed in remote location.
+	if (runRemotely)
+		process.chdir(rwd);
+	// Wait for all of mouka to load interpret (since require's are sync)
 	await timeout();
+	// import test file
 	try {
 		require(`${process.cwd()}/${testFileName}.mjs`);
 	} catch(e) {
 		require(`${process.cwd()}/${testFileName}.js`);
 	}
-	execute()
-		.then(stringifyLog)
-		.then(exportLog)
-		.catch(err => console.error(err));
+	try {
+		// Run tests
+		var log = await execute();
+		// Change cwd back to original location if the tests were executed in remote location.
+		if (runRemotely)
+			process.chdir(owd);
+		// Export tests
+		return stringifyLog(log)
+			.then(exportLog)
+	} catch(err) {
+		console.error(err);
+	}
 }
 
 async function runAsBroswer(outputElement) {
