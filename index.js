@@ -262,16 +262,16 @@ async function runAsCli() {
 	}
 	// origin working directory
 	var owd = process.cwd();
+	// Wait for all of mouka to load interpret (since require's are sync)
+	await timeout();
 	// Change cwd if the tests are to be executed in remote location.
 	if (runRemotely)
 		process.chdir(rwd);
-	// Wait for all of mouka to load interpret (since require's are sync)
-	await timeout();
 	// import test file
 	try {
-		require(`${process.cwd()}/${testFileName}.mjs`);
+		require(`${owd}/${testFileName}.mjs`);
 	} catch(e) {
-		require(`${process.cwd()}/${testFileName}.js`);
+		require(`${owd}/${testFileName}.js`);
 	}
 	try {
 		// Run tests
@@ -325,8 +325,13 @@ async function exportLog(json) {
 	var path = require('path');
 	var exportFilePath = path.join(process.cwd(), exportFileName);
 	var writeFile = util.promisify(fs.writeFile);
-	console.log('exportFilePath', exportFilePath);
-	return writeFile(exportFilePath, json)
+	try {
+		await writeFile(exportFilePath, json);
+		console.log('LOG SAVED', exportFilePath);
+	} catch(err) {
+		console.error('ERROR, saving log onsuccessful', exportFilePath);
+		console.error(err);
+	}
 }
 
 //import def from './src/index.mjs'
