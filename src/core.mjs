@@ -1,7 +1,6 @@
 import {timeout, sanitizeError, stringify, objectsEqual, traversePath, escapeHtml} from './util.mjs'
 import {SCOPE_SYMBOL, TEST_SYMBOL} from './util.mjs'
-import {testsRoot} from './api.mjs'
-
+import {testsRoot, beforeSymbol, afterSymbol, beforeEachSymbol, afterEachSymbol} from './api.mjs'
 
 
 var separatorLength = 30
@@ -16,26 +15,32 @@ export async function execute() {
 	}
 }
 
-async function executeScope(scopeName, tests) {
+async function executeScope(scopeName, scope) {
 	if (scopeName) {
 		console.log('#'.repeat(separatorLength))
 		console.log('# scope:', scopeName)
 	}
 	var output = {}
-	for (var [testName, test] of Object.entries(tests)) {
+	if (scope[beforeSymbol])
+		scope[beforeSymbol]()
+	for (var [testName, test] of Object.entries(scope)) {
 		if (typeof test === 'object')
 			output[SCOPE_SYMBOL + testName] = await executeScope(testName, test)
 		else
-			output[TEST_SYMBOL + testName] = await executeTest(testName, test)
+			output[TEST_SYMBOL + testName] = await executeTest(testName, test, scope[beforeEachSymbol], scope[afterEachSymbol])
 	}
+	if (scope[afterSymbol])
+		scope[afterSymbol]()
 	return output
 }
 
-async function executeTest(testName, test) {
+async function executeTest(testName, test, before, after) {
 	console.log('-'.repeat(separatorLength))
 	console.log('running:', testName)
 	try {
+		if (before) before()
 		var output = await test()
+		if (after) after(output)
 		console.log('output: ', output)
 		return output
 	} catch(err) {
