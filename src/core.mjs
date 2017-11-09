@@ -1,128 +1,100 @@
-import {timeout, sanitizeError, stringify, objectsEqual, traversePath, escapeHtml} from './util.mjs'
-import {SCOPE_SYMBOL, TEST_SYMBOL} from './util.mjs'
-import {testsRoot, beforeSymbol, afterSymbol, beforeEachSymbol, afterEachSymbol} from './api.mjs'
-
-
-var separatorLength = 30
-
-// EXECUTION
-
-export async function execute() {
-	try {
-		return executeScope(undefined, testsRoot)
-	} catch(err) {
-		throw 'Something went wrong during execution of the test cases.' + ' ' + err.message
-	}
-}
-
-async function executeScope(scopeName, scope) {
-	if (scopeName) {
-		console.log('#'.repeat(separatorLength))
-		console.log('# scope:', scopeName)
-	}
-	var output = {}
-	if (scope[beforeSymbol])
-		scope[beforeSymbol]()
-	for (var [testName, test] of Object.entries(scope)) {
-		if (typeof test === 'object')
-			output[SCOPE_SYMBOL + testName] = await executeScope(testName, test)
-		else
-			output[TEST_SYMBOL + testName] = await executeTest(testName, test, scope[beforeEachSymbol], scope[afterEachSymbol])
-	}
-	if (scope[afterSymbol])
-		scope[afterSymbol]()
-	return output
-}
-
-async function executeTest(testName, test, before, after) {
-	console.log('-'.repeat(separatorLength))
-	console.log('running:', testName)
-	try {
-		if (before) before()
-		var output = await test()
-		if (after) after(output)
-		console.log('output: ', output)
-		return output
-	} catch(err) {
-		//console.error(`Error occured while running '${testName}'`)
-		console.error('output: ', err)
-		return sanitizeError(err)
-	}
-}
+import {isNode, handleError, toJson, timeout, redirectConsoleTo, getTestName} from './util.mjs'
+import {queryNodes, logNode} from './util.mjs'
+import {TestSuite} from './TestSuite.mjs'
 
 
 
-// COMPARATION OF TWO LOGS
+var autoRunIn = 1000
 
-export var compare = compareScope
+var running = false
 
-function compareScope(mainLog, secondaryLog) {
-	var output = {}
-	for (var [name, desiredResult] of Object.entries(mainLog)) {
-		if (secondaryLog[name] === undefined)
-			continue
-		if (name.startsWith(SCOPE_SYMBOL))
-			output[name] = compareScope(desiredResult, secondaryLog[name])
-		else if (name.startsWith(TEST_SYMBOL))
-			output[name] = compareTest(name, desiredResult, secondaryLog[name])
-	}
-	return output
-}
+var testSuites = []
+export var currentSuite
 
-function compareTest(testName, desiredResult, actualResult) {
-	if (objectsEqual(desiredResult, actualResult))
-		return true
-	else
-		return [actualResult, desiredResult]
-}
+export var run = isNode ? runAsCli : runAsBrowser
 
-
-// RENDERING RESULT OF LOGS
-
-export var render = renderScope.bind(undefined, undefined)
-
-function renderScope(scopeName, scope, path = []) {
-	var fragment = document.createDocumentFragment()
-	if (scopeName) {
-		var nameNode = document.createElement(`h${path.length}`)
-		nameNode.textContent = scopeName
-		fragment.appendChild(nameNode)
-		var block = document.createElement('div')
-		block.style.paddingLeft = '1rem'
-		fragment.appendChild(block)
+setTimeout(() => {
+	if (isNode) {
+		runAsCli()
 	} else {
-		var block = fragment
+		queryNodes()
+		if (logNode)
+			redirectConsoleTo(logNode)
 	}
-	for (var [name, result] of Object.entries(scope)) {
-		let symbol = name.slice(0, 2)
-		name = name.slice(2)
-		if (symbol === SCOPE_SYMBOL)
-			var testFragment = renderScope(name, result, [...path, name])
-		else if (symbol === TEST_SYMBOL)
-			var testFragment = renderTest(name, result, [...path, name])
-		block.appendChild(testFragment)
+})
+
+export function setup(type = 'cdd', autoRunIn = 1000) {
+	var suiteName = getTestName()
+	var suite = new TestSuite(suiteName, type)
+	testSuites.push(suite)
+	currentSuite = suite
+	autoRunIn = autoRunIn
+	if (!isNode && !running && autoRunIn > -1) {
+		running = true
+		timeout(autoRunIn)
+			.then(runAsBrowser)
+			.catch(handleError)
 	}
-	return fragment
+	return suite
 }
 
-function renderTest(testName, testResult, path) {
-	var fragment = document.createElement('div')
-	var color = testResult === true ? 'green' : 'red'
-	var innerHTML = `<div style="color: ${color}">${testName}</div>`
-	if (testResult !== true) {
-		var [actualValue, desiredValue] = testResult
-		var test = traversePath(path, testsRoot)
-		var testCode = escapeHtml(test.toString())
-		innerHTML += `
-		<div style="padding-left: 1rem">
-			<pre style="color: gray">${testCode}</pre>
-			<div>result is:</div>
-			<pre style="color: darkred">${stringify(actualValue)}</pre>
-			<div>should be:</div>
-			<pre style="color: darkred">${stringify(desiredValue)}</pre>
-		</div>
-		`
+
+export async function runAsCli() {
+	running = true
+	var suite = setup('cdd')
+	// TODO - change 2 to 1
+	var runRemotely = process.argv.includes('-r')
+					|| process.argv.includes('--remote')
+					|| !process.argv.includes('-l')
+	if (process.argv.includes('--remote')) {
+		// remove working directory from cli args
+		var rwd = process.argv[process.argv.indexOf('--remote')]
+	} else {
+		// remove working directory for sideloaded UWP apps
+		var rwd = '..\\bin\\Debug\\AppX\\test'
 	}
-	fragment.innerHTML = innerHTML
-	return fragment
+	// origin working directory
+	var owd = process.cwd()
+	// Wait for all of mouka to load interpret (since require's are sync)
+	await timeout()
+	// Change cwd if the tests are to be executed in remote location.
+	if (runRemotely) {
+		try {
+			console.log('running remotely at', rwd)
+			process.chdir(rwd)
+		} catch(err) {
+			console.log(`ERROR: Couldn't change cwd to remote location`)
+			throw err
+		}
+	}
+	// import test file
+	try {
+		require(`${owd}\\${suite.name}.mjs`)
+	} catch(e) {
+		try {
+			require(`${owd}\\${suite.name}.js`)
+		} catch(err) {
+			console.error(err)
+			throw new Error(`couldn't find test file, ${owd}\\${suite.name}.mjs doesn't exist, ${owd}\\${suite.name}.js neither`)
+		}
+	}
+	try {
+		// Run tests
+		var result = await suite.execute()
+		// Change cwd back to original location if the tests were executed in remote location.
+		if (runRemotely)
+			process.chdir(owd)
+		// Export tests
+		return suite.exportLog(toJson(result))
+	} catch(err) {
+		console.error(err)
+	}
 }
+
+export async function runAsBrowser() {
+	running = true
+	for (var suite of testSuites) {
+		await suite.run().catch(handleError)
+	}
+}
+

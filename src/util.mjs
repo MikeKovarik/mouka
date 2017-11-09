@@ -20,6 +20,13 @@ export var SCOPE_SYMBOL = '>|'
 export var TEST_SYMBOL = '#|'
 
 
+export function getTestName() {
+	if (isNode)
+		return process.argv[2]
+	else
+		return document.currentScript.src.split('/').pop().split('.').shift()
+}
+
 export function redirectConsoleTo(logNode) {
 
 	var _log = console.log.bind(console)
@@ -27,13 +34,7 @@ export function redirectConsoleTo(logNode) {
 
 	function wrapLog(args) {
 		return args
-			.map(item => {
-				if (item === null)
-					return 'null'
-				if (item === undefined)
-					return 'undefined'
-				return item.toString()
-			})
+			.map(toString)
 			.join(' ')
 			+ '\n'
 	}
@@ -51,6 +52,33 @@ export function redirectConsoleTo(logNode) {
 
 }
 
+export function toString(data) {
+	if (data === null)
+		return 'null'
+	if (data === undefined)
+		return 'undefined'
+	try {
+		return data.toString()
+	} catch(e) {
+		return '--- unable to call .toString() ---'
+	}
+}
+
+export function toJson(data) {
+	try {
+		if (data === null)
+			return null
+		if (data === undefined)
+			return undefined
+		if (data && Array.isArray(data))
+			return JSON.stringify(data)
+		else
+			return JSON.stringify(data, null, '\t')
+	} catch(e) {
+		return '--- unable to JSON.stringify ---'
+	}
+}
+
 // Copy Error's contents into a new object that can be stringified
 export function sanitizeError(err) {
 	//var {errno, code, syscall, path, message} = err
@@ -60,19 +88,6 @@ export function sanitizeError(err) {
 	Object.keys(err)
 		.forEach(key => newErr[key] = err[key])
 	return newErr
-}
-
-export function stringify(data) {
-	try {
-		if (data === null)
-			return null
-		if (data && Array.isArray(data))
-			return escapeHtml(JSON.stringify(data))
-		else
-			return escapeHtml(JSON.stringify(data, null, 2))
-	} catch(e) {
-		return '--- unable to stringify ---'
-	}
 }
 
 export function escapeHtml(data) {
@@ -98,4 +113,29 @@ export function traversePath(path, root) {
 	while (path.length && scope !== undefined)
 		scope = scope[path.shift()]
 	return scope
+}
+
+export function onFetchResponse(response) {
+	if (response.ok)
+		return response
+	else
+		throw new Error(`not found ${response.url}`)
+}
+
+export function handleError(err) {
+	console.error(err)
+	if (!warningNode) return
+	var p = document.createElement('p')
+	p.textContent = err.message || err.toString()
+	warningNode.appendChild(p)
+}
+
+export var logNode
+export var warningNode
+export var resultNode
+
+export function queryNodes() {
+	logNode = document.querySelector('#mouka-log')
+	warningNode = document.querySelector('#mouka-warning')
+	resultNode = document.querySelector('#mouka-result')
 }

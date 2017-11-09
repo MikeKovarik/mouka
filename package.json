@@ -1,6 +1,6 @@
 {
   "name": "mouka",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "simple, proprietary, fun javascript test framework for comparative testing",
   "author": "Mike Kovařík",
   "license": "MIT",
