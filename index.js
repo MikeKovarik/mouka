@@ -8,6 +8,83 @@ fs = fs && fs.hasOwnProperty('default') ? fs['default'] : fs;
 util = util && util.hasOwnProperty('default') ? util['default'] : util;
 path = path && path.hasOwnProperty('default') ? path['default'] : path;
 
+function toString(data) {
+	if (data === null)
+		return 'null'
+	if (data === undefined)
+		return 'undefined'
+	try {
+		return data.toString()
+	} catch(e) {
+		return '--- unable to call .toString() ---'
+	}
+}
+
+function toJson(data) {
+	try {
+		if (data === null)
+			return null
+		if (data === undefined)
+			return undefined
+		else
+			return stringify(data)
+	} catch(e) {
+		return '--- unable to JSON.stringify ---'
+	}
+}
+
+function escapeHtml(data) {
+	return data.replace(/&/g, '&amp;')
+			   .replace(/</g, '&lt;')
+			   .replace(/>/g, '&gt;')
+			   .replace(/"/g, '&quot;')
+			   .replace(/'/g, '&apos;')
+}
+
+function prettyPrintCode(fn) {
+	var code = fn.toString().trim().replace(/\t/g, '  ');
+	code = escapeHtml(code);
+	var lines = code.split('\n');
+	if (lines.length === 1)
+		return code
+	var lastLine = lines[lines.length - 1];
+	var indentSpaceCount = lastLine.length - lastLine.trim().length;
+	if (indentSpaceCount === 0)
+		return code
+	var indentation = ' '.repeat(indentSpaceCount);
+	return lines
+		.map(line => {
+			if (line.startsWith(indentation))
+				return line.slice(indentSpaceCount)
+			else
+				return line
+		})
+		.join('\n')
+}
+
+// JSON.stringify with pretty print that keeps array of primitives one-liner
+
+function stringify(data, spaces = 2) {
+	return JSON.stringify(data, replacer, spaces)
+		.replace(/\"\^\^\^\[/g, '[')
+		.replace(/\]\^\^\^\"/g, ']')
+}
+
+function replacer(key, val) {
+	if (Array.isArray(val) && isPrimitive(val[0])
+	&& isPrimitive(val[1]) && isPrimitive(val[2]))
+		return '^^^' + JSON.stringify(val) + '^^^'
+	return val
+}
+
+function isPrimitive(data) {
+	return data === null
+		|| data === undefined
+		|| data.constructor === String
+		|| data.constructor === Number
+		|| data.constructor === Boolean
+}
+
 var timeout = (millis = 0) => new Promise(resolve => setTimeout(resolve, millis));
 
 var self = typeof global === 'object' ? global : window;
@@ -42,12 +119,7 @@ function redirectConsoleTo(logNode) {
 	var _log = console.log.bind(console);
 	var _error = console.error.bind(console);
 
-	function wrapLog(args) {
-		return args
-			.map(toString)
-			.join(' ')
-			+ '\n'
-	}
+	var wrapLog = args => args.map(toString).join(' ') + '\n';
 
 	console.log = function log(...args) {
 		_log(...args);
@@ -62,50 +134,14 @@ function redirectConsoleTo(logNode) {
 
 }
 
-function toString(data) {
-	if (data === null)
-		return 'null'
-	if (data === undefined)
-		return 'undefined'
-	try {
-		return data.toString()
-	} catch(e) {
-		return '--- unable to call .toString() ---'
-	}
-}
-
-function toJson(data) {
-	try {
-		if (data === null)
-			return null
-		if (data === undefined)
-			return undefined
-		if (data && Array.isArray(data))
-			return JSON.stringify(data)
-		else
-			return JSON.stringify(data, null, '\t')
-	} catch(e) {
-		return '--- unable to JSON.stringify ---'
-	}
-}
-
 // Copy Error's contents into a new object that can be stringified
 function sanitizeError(err) {
 	//var {errno, code, syscall, path, message} = err
 	//return {errno, code, syscall, path, message}
-	var {message} = err;
-	var newErr = {message};
-	Object.keys(err)
-		.forEach(key => newErr[key] = err[key]);
+	var {message, name} = err;
+	var newErr = {message, name};
+	Object.keys(err).forEach(key => newErr[key] = err[key]);
 	return newErr
-}
-
-function escapeHtml(data) {
-	return data.replace(/&/g, '&amp;')
-			   .replace(/</g, '&lt;')
-			   .replace(/>/g, '&gt;')
-			   .replace(/"/g, '&quot;')
-			   .replace(/'/g, '&apos;')
 }
 
 // TODO: rewrite to to not use JSON
@@ -219,20 +255,22 @@ class TestSuite {
 			if (typeof test === 'object')
 				output[SCOPE_SYMBOL + testName] = await this.executeScope(testName, test);
 			else
-				output[TEST_SYMBOL + testName] = await this.executeTest(testName, test, fnScope[beforeEachSymbol], fnScope[afterEachSymbol]);
+				output[TEST_SYMBOL + testName] = await this.executeTest(testName, test, fnScope);
 		}
 		if (fnScope[afterSymbol])
 			fnScope[afterSymbol]();
 		return output
 	}
 
-	async executeTest(testName, test, before, after) {
+	async executeTest(testName, test, fnScope) {
 		console.log('-'.repeat(separatorLength));
 		console.log('running:', testName);
 		try {
-			if (before) before();
+			if (fnScope[beforeEachSymbol])
+				await Promise.resolve(fnScope[beforeEachSymbol]()).catch(console.error);
 			var output = await test();
-			if (after) after(output);
+			if (fnScope[afterEachSymbol])
+				await Promise.resolve(fnScope[afterEachSymbol](output)).catch(console.error);
 			console.log('output: ', output);
 			return output
 		} catch(err) {
@@ -247,23 +285,23 @@ class TestSuite {
 	// COMPARATION OF TWO LOGS
 
 	compare(resultLog, importedTree) {
-		return this.compareScope(importedTree, resultLog)
+		return this.compareScope(resultLog, importedTree)
 	}
 
-	compareScope(mainLog, secondaryLog) {
+	compareScope(resultLog, importedLog) {
 		var output = {};
-		for (var [name, desiredResult] of Object.entries(mainLog)) {
-			if (secondaryLog[name] === undefined)
+		for (var [name, desiredResult] of Object.entries(importedLog)) {
+			if (resultLog[name] === undefined)
 				continue
 			if (name.startsWith(SCOPE_SYMBOL))
-				output[name] = this.compareScope(desiredResult, secondaryLog[name]);
+				output[name] = this.compareScope(resultLog[name], desiredResult);
 			else if (name.startsWith(TEST_SYMBOL))
-				output[name] = this.compareTest(name, desiredResult, secondaryLog[name]);
+				output[name] = this.compareTest(name, resultLog[name], desiredResult);
 		}
 		return output
 	}
 
-	compareTest(testName, desiredResult, actualResult) {
+	compareTest(testName, actualResult, desiredResult) {
 		if (objectsEqual(desiredResult, actualResult))
 			return true
 		else
@@ -317,7 +355,7 @@ class TestSuite {
 
 		if (!testPassed) {
 			var test = traversePath(path$$1, this.functionsTree);
-			var testCode = escapeHtml(toString(test));
+			var testCode = prettyPrintCode(test);
 		}
 
 		if (this.type === 'cdd' && testResult !== true) {
@@ -512,10 +550,7 @@ exports.SCOPE_SYMBOL = SCOPE_SYMBOL;
 exports.TEST_SYMBOL = TEST_SYMBOL;
 exports.getTestName = getTestName;
 exports.redirectConsoleTo = redirectConsoleTo;
-exports.toString = toString;
-exports.toJson = toJson;
 exports.sanitizeError = sanitizeError;
-exports.escapeHtml = escapeHtml;
 exports.objectsEqual = objectsEqual;
 exports.traversePath = traversePath;
 exports.onFetchResponse = onFetchResponse;

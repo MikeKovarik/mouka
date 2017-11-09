@@ -1,4 +1,5 @@
-import {isNode, handleError, toJson, timeout, redirectConsoleTo, getTestName} from './util.mjs'
+import {isNode, handleError, timeout, redirectConsoleTo, getTestName} from './util.mjs'
+import {toJson} from './stringify.mjs'
 import {queryNodes, logNode} from './util.mjs'
 import {TestSuite} from './TestSuite.mjs'
 

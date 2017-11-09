@@ -1,8 +1,9 @@
 import fs from 'fs'
 import util from 'util'
 import path from 'path'
-import {isNode, handleError, timeout, sanitizeError, toJson, toString, objectsEqual, traversePath, escapeHtml, onFetchResponse} from './util.mjs'
+import {isNode, handleError, timeout, sanitizeError, objectsEqual, traversePath, onFetchResponse} from './util.mjs'
 import {SCOPE_SYMBOL, TEST_SYMBOL} from './util.mjs'
+import {toJson, toString, prettyPrintCode, escapeHtml} from './stringify.mjs'
 import {beforeSymbol, afterSymbol, beforeEachSymbol, afterEachSymbol} from './api.mjs'
 import {resultNode} from './util.mjs'
 
@@ -76,20 +77,22 @@ export class TestSuite {
 			if (typeof test === 'object')
 				output[SCOPE_SYMBOL + testName] = await this.executeScope(testName, test)
 			else
-				output[TEST_SYMBOL + testName] = await this.executeTest(testName, test, fnScope[beforeEachSymbol], fnScope[afterEachSymbol])
+				output[TEST_SYMBOL + testName] = await this.executeTest(testName, test, fnScope)
 		}
 		if (fnScope[afterSymbol])
 			fnScope[afterSymbol]()
 		return output
 	}
 
-	async executeTest(testName, test, before, after) {
+	async executeTest(testName, test, fnScope) {
 		console.log('-'.repeat(separatorLength))
 		console.log('running:', testName)
 		try {
-			if (before) before()
+			if (fnScope[beforeEachSymbol])
+				await Promise.resolve(fnScope[beforeEachSymbol]()).catch(console.error)
 			var output = await test()
-			if (after) after(output)
+			if (fnScope[afterEachSymbol])
+				await Promise.resolve(fnScope[afterEachSymbol](output)).catch(console.error)
 			console.log('output: ', output)
 			return output
 		} catch(err) {
@@ -104,23 +107,23 @@ export class TestSuite {
 	// COMPARATION OF TWO LOGS
 
 	compare(resultLog, importedTree) {
-		return this.compareScope(importedTree, resultLog)
+		return this.compareScope(resultLog, importedTree)
 	}
 
-	compareScope(mainLog, secondaryLog) {
+	compareScope(resultLog, importedLog) {
 		var output = {}
-		for (var [name, desiredResult] of Object.entries(mainLog)) {
-			if (secondaryLog[name] === undefined)
+		for (var [name, desiredResult] of Object.entries(importedLog)) {
+			if (resultLog[name] === undefined)
 				continue
 			if (name.startsWith(SCOPE_SYMBOL))
-				output[name] = this.compareScope(desiredResult, secondaryLog[name])
+				output[name] = this.compareScope(resultLog[name], desiredResult)
 			else if (name.startsWith(TEST_SYMBOL))
-				output[name] = this.compareTest(name, desiredResult, secondaryLog[name])
+				output[name] = this.compareTest(name, resultLog[name], desiredResult)
 		}
 		return output
 	}
 
-	compareTest(testName, desiredResult, actualResult) {
+	compareTest(testName, actualResult, desiredResult) {
 		if (objectsEqual(desiredResult, actualResult))
 			return true
 		else
@@ -174,7 +177,7 @@ export class TestSuite {
 
 		if (!testPassed) {
 			var test = traversePath(path, this.functionsTree)
-			var testCode = escapeHtml(toString(test))
+			var testCode = prettyPrintCode(test)
 		}
 
 		if (this.type === 'cdd' && testResult !== true) {
