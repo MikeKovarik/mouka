@@ -103,9 +103,6 @@ if (isNode) {
 	exports.cwd = split.join('\\');
 }
 
-var SCOPE_SYMBOL = '>|';
-var TEST_SYMBOL = '#|';
-
 
 function getTestName() {
 	if (isNode)
@@ -114,24 +111,25 @@ function getTestName() {
 		return document.currentScript.src.split('/').pop().split('.').shift()
 }
 
+var _log = console.log.bind(console);
+var _error = console.error.bind(console);
+
+var wrapLog = args => args.map(toString).join(' ') + '\n';
+
+function log(...args) {
+	_log(...args);
+	if (exports.logNode) exports.logNode.textContent += wrapLog(args);
+}
+
+function error(...args) {
+	_error(...args);
+	if (exports.logNode) exports.logNode.textContent += wrapLog(args);
+	//logNode.textContent += '<span style="color: red">' + wrapLog(args) + '</span>'
+}
+
 function redirectConsoleTo(logNode) {
-
-	var _log = console.log.bind(console);
-	var _error = console.error.bind(console);
-
-	var wrapLog = args => args.map(toString).join(' ') + '\n';
-
-	console.log = function log(...args) {
-		_log(...args);
-		logNode.textContent += wrapLog(args);
-	};
-
-	console.error = function error(...args) {
-		_error(...args);
-		logNode.textContent += wrapLog(args);
-		//logNode.textContent += '<span style="color: red">' + wrapLog(args) + '</span>'
-	};
-
+	console.log = log;
+	console.error = error;
 }
 
 // Copy Error's contents into a new object that can be stringified
@@ -180,13 +178,17 @@ function handleError(err) {
 ;
 ;
 
+exports.canRenderResult = false;
+
 function queryNodes() {
 	exports.logNode = document.querySelector('#mouka-log');
 	exports.warningNode = document.querySelector('#mouka-warning');
 	exports.resultNode = document.querySelector('#mouka-result');
+	if (exports.resultNode)
+		exports.canRenderResult = true;
 }
 
-var separatorLength = 30;
+var separatorLength = 50;
 
 
 
@@ -203,184 +205,118 @@ class TestSuite {
 		this.functionsTree = {};
 		this._currentFnScope = this.functionsTree;
 
-		this.execute = this.execute.bind(this);
 		this.executeScope = this.executeScope.bind(this);
 		this.executeTest = this.executeTest.bind(this);
-		this.compare = this.compare.bind(this);
-		this.compareScope = this.compareScope.bind(this);
-		this.compareTest = this.compareTest.bind(this);
-		this.render = this.render.bind(this);
-		this.renderScope = this.renderScope.bind(this);
-		this.renderTest = this.renderTest.bind(this);
 		this.importLog = this.importLog.bind(this);
 		this.exportLog = this.exportLog.bind(this);
 
 		// Import log if we're coing Comparative Drive Development
-		if (!isNode && this.autoImport !== false && this.type === 'cdd')
+		if (this.type === 'cdd' && !isNode && this.autoImport)
 			this.importLog();
 	}
 
 
 	async run() {
-		if (this.type === 'cdd') {
-			var fragment = this.render(await this.execute(), await this.importLog());
-		} else {
-			var fragment = this.render(await this.execute());
-		}
-		if (exports.resultNode)
-			exports.resultNode.appendChild(fragment);
-	}
-
-
-	// EXECUTION
-
-	execute() {
+		if (this.type === 'cdd' && !isNode)
+			await this.importLog();
 		try {
-			this.executePromise = this.executeScope(undefined, this.functionsTree);
-			return this.executePromise
+			return await this.executeScope(undefined, this.functionsTree)
 		} catch(err) {
 			throw 'Something went wrong during execution of the test cases.' + ' ' + err.message
 		}
 	}
 
-	async executeScope(scopeName, fnScope) {
-		if (scopeName) {
-			console.log('#'.repeat(separatorLength));
-			console.log('# scope:', scopeName);
+
+	async executeScope(name, scope, path$$1 = []) {
+		if (name) {
+			log('#'.repeat(separatorLength));
+			log('# scope:', name);
+			if (exports.canRenderResult) {
+				var fragment = document.createDocumentFragment();
+				var nameNode = document.createElement(`h${path$$1.length}`);
+				nameNode.textContent = name;
+				fragment.appendChild(nameNode);
+				exports.resultNode.appendChild(fragment);
+			}
 		}
+		var beforeEach = scope[beforeEachSymbol];
+		var afterEach = scope[afterEachSymbol];
+		var before = scope[beforeSymbol];
+		var after = scope[afterSymbol];
 		var output = {};
-		if (fnScope[beforeSymbol])
-			fnScope[beforeSymbol]();
-		for (var [testName, test] of Object.entries(fnScope)) {
+		
+		if (before)
+			await Promise.resolve(before()).catch(error);
+		
+		for (var [name, test] of Object.entries(scope)) {
 			if (typeof test === 'object')
-				output[SCOPE_SYMBOL + testName] = await this.executeScope(testName, test);
+				output[name] = await this.executeScope(name, test, [...path$$1, name]);
 			else
-				output[TEST_SYMBOL + testName] = await this.executeTest(testName, test, fnScope);
+				output[name] = await this.executeTest(name, test, [...path$$1, name], beforeEach, afterEach);
 		}
-		if (fnScope[afterSymbol])
-			fnScope[afterSymbol]();
+		
+		if (after)
+			await Promise.resolve(after()).catch(error);
+		
 		return output
 	}
 
-	async executeTest(testName, test, fnScope) {
-		console.log('-'.repeat(separatorLength));
-		console.log('running:', testName);
+
+
+	async executeTest(name, test, path$$1, beforeEach, afterEach) {
+		log('-'.repeat(separatorLength));
+		log('running:', name);
+
+		// execution part
 		try {
-			if (fnScope[beforeEachSymbol])
-				await Promise.resolve(fnScope[beforeEachSymbol]()).catch(console.error);
-			var output = await test();
-			if (fnScope[afterEachSymbol])
-				await Promise.resolve(fnScope[afterEachSymbol](output)).catch(console.error);
-			console.log('output: ', output);
-			return output
+			if (beforeEach)
+				await Promise.resolve(beforeEach()).catch(error);
+			var result = await test();
+			if (afterEach)
+				await Promise.resolve(afterEach(result)).catch(error);
+			log('result: ', result);
 		} catch(err) {
-			//console.error(`Error occured while running '${testName}'`)
-			console.error('output: ', err);
-			return sanitizeError(err)
-		}
-	}
-
-
-
-	// COMPARATION OF TWO LOGS
-
-	compare(resultLog, importedTree) {
-		return this.compareScope(resultLog, importedTree)
-	}
-
-	compareScope(resultLog, importedLog) {
-		var output = {};
-		for (var [name, desiredResult] of Object.entries(importedLog)) {
-			if (resultLog[name] === undefined)
-				continue
-			if (name.startsWith(SCOPE_SYMBOL))
-				output[name] = this.compareScope(resultLog[name], desiredResult);
-			else if (name.startsWith(TEST_SYMBOL))
-				output[name] = this.compareTest(name, resultLog[name], desiredResult);
-		}
-		return output
-	}
-
-	compareTest(testName, actualResult, desiredResult) {
-		if (objectsEqual(desiredResult, actualResult))
-			return true
-		else
-			return [actualResult, desiredResult]
-	}
-
-
-
-	// RENDERING RESULT OF LOGS
-
-	render(resultTree, importedTree) {
-		if (importedTree)
-			return this.renderScope(undefined, this.compare(resultTree, importedTree))
-		else
-			return this.renderScope(undefined, resultTree)
-	}
-
-	renderScope(scopeName, resultScope, path$$1 = []) {
-		var fragment = document.createDocumentFragment();
-		if (scopeName) {
-			var nameNode = document.createElement(`h${path$$1.length}`);
-			nameNode.textContent = scopeName;
-			fragment.appendChild(nameNode);
-			var block = document.createElement('div');
-			block.style.paddingLeft = '1rem';
-			fragment.appendChild(block);
-		} else {
-			var block = fragment;
-		}
-		for (var [name, result] of Object.entries(resultScope)) {
-			let symbol = name.slice(0, 2);
-			name = name.slice(2);
-			if (symbol === SCOPE_SYMBOL)
-				var testFragment = this.renderScope(name, result, [...path$$1, name]);
-			else if (symbol === TEST_SYMBOL)
-				var testFragment = this.renderTest(name, result, [...path$$1, name]);
-			block.appendChild(testFragment);
-		}
-		return fragment
-	}
-
-	renderTest(testName, testResult, path$$1) {
-		var fragment = document.createElement('div');
-		var testPassed = false;
-		if (this.type === 'cdd' && testResult === true)
-			testPassed = true;
-		if (this.type === 'bdd' && testResult === undefined)
-			testPassed = true;
-		var color = testPassed ? 'green' : 'red';
-		var innerHTML = `<div style="color: ${color}">${testName}</div>`;
-
-		if (!testPassed) {
-			var test = traversePath(path$$1, this.functionsTree);
-			var testCode = prettyPrintCode(test);
+			error('result: ', err);
+			var result = sanitizeError(err);
 		}
 
-		if (this.type === 'cdd' && testResult !== true) {
-			var [actualValue, desiredValue] = testResult;
-			innerHTML += `
-			<div style="padding-left: 1rem">
-				<pre style="color: gray">${testCode}</pre>
-				<div>result is:</div>
-				<pre style="color: darkred">${escapeHtml(toJson(actualValue))}</pre>
-				<div>should be:</div>
-				<pre style="color: darkred">${escapeHtml(toJson(desiredValue))}</pre>
-			</div>
-			`;
-		} else if (this.type === 'bdd' && testResult !== undefined) {
-			innerHTML += `
-			<div style="padding-left: 1rem">
-				<pre style="color: gray">${testCode}</pre>
-				<div>output is:</div>
-				<pre style="color: darkred">${escapeHtml(toJson(testResult))}</pre>
-			</div>
-			`;
+		// render part
+		if (exports.canRenderResult) {
+			// determine if the test passed
+			if (this.type === 'cdd') {
+				// get desired result for current test from imported log
+				var desiredResult = traversePath(path$$1, this.importedTree);
+				// compare executed result against desired result from imported log
+				var passed = objectsEqual(desiredResult, result);
+			} else {
+				var passed = result === undefined;
+			}
+			// render 
+			var fragment = document.createElement('div');
+			if (passed) {
+				fragment.innerHTML = `<div style="color: green">${name}</div>`;
+			} else {
+				var testCode = prettyPrintCode(test);
+				var innerHTML = `
+				<div style="color: red">${name}</div>
+				<div style="padding-left: 1rem">
+					<pre style="color: gray">${testCode}</pre>
+					<div>result is:</div>
+					<pre style="color: darkred">${escapeHtml(toJson(result))}</pre>`;
+				if (this.type === 'cdd') {
+					innerHTML += `
+					<div>should be:</div>
+					<pre style="color: darkred">${escapeHtml(toJson(desiredResult))}</pre>`;
+				}
+				innerHTML += `</div>`;
+				fragment.innerHTML = innerHTML;
+			}
+			exports.resultNode.appendChild(fragment);
 		}
-		fragment.innerHTML = innerHTML;
-		return fragment
+
+		return result
 	}
+
 
 
 
@@ -388,6 +324,7 @@ class TestSuite {
 	// EXPORT / IMPORT
 
 	importLog() {
+		log('importLog');
 		if (this.importPromise)
 			return this.importPromise
 		var logFilePath = `./${this.name}.json`;
@@ -395,7 +332,9 @@ class TestSuite {
 		this.importPromise = fetch(logFilePath)
 			.then(onFetchResponse)
 			.then(res => res.json())
-			.catch(err => {throw new Error(`${COULD_NOT_LOAD_MSG} '${logFilePath}'`)});
+			.then(importedTree => this.importedTree = importedTree)
+			.catch(err => log('DOPICE', err));
+			//.catch(err => {throw new Error(`${COULD_NOT_LOAD_MSG} '${logFilePath}'`)})
 		return this.importPromise
 	}
 
@@ -404,10 +343,10 @@ class TestSuite {
 		var writeFile = util.promisify(fs.writeFile);
 		try {
 			await writeFile(logFilePath, json);
-			console.log('LOG SAVED', logFilePath);
+			log('LOG SAVED', logFilePath);
 		} catch(err) {
-			console.error('ERROR, saving log onsuccessful', logFilePath);
-			console.error(err);
+			error('ERROR, saving log onsuccessful', logFilePath);
+			error(err);
 		}
 	}
 
@@ -490,7 +429,7 @@ async function runAsCli() {
 	}
 	try {
 		// Run tests
-		var result = await suite.execute();
+		var result = await suite.run();
 		// Change cwd back to original location if the tests were executed in remote location.
 		if (runRemotely)
 			process.chdir(owd);
@@ -546,9 +485,9 @@ self.afterEach = function(callback) {
 exports.timeout = timeout;
 exports.self = self;
 exports.isNode = isNode;
-exports.SCOPE_SYMBOL = SCOPE_SYMBOL;
-exports.TEST_SYMBOL = TEST_SYMBOL;
 exports.getTestName = getTestName;
+exports.log = log;
+exports.error = error;
 exports.redirectConsoleTo = redirectConsoleTo;
 exports.sanitizeError = sanitizeError;
 exports.objectsEqual = objectsEqual;

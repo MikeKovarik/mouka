@@ -18,9 +18,6 @@ if (isNode) {
 	cwd = split.join('\\')
 }
 
-export var SCOPE_SYMBOL = '>|'
-export var TEST_SYMBOL = '#|'
-
 
 export function getTestName() {
 	if (isNode)
@@ -29,24 +26,25 @@ export function getTestName() {
 		return document.currentScript.src.split('/').pop().split('.').shift()
 }
 
+var _log = console.log.bind(console)
+var _error = console.error.bind(console)
+
+var wrapLog = args => args.map(toString).join(' ') + '\n'
+
+export function log(...args) {
+	_log(...args)
+	if (logNode) logNode.textContent += wrapLog(args)
+}
+
+export function error(...args) {
+	_error(...args)
+	if (logNode) logNode.textContent += wrapLog(args)
+	//logNode.textContent += '<span style="color: red">' + wrapLog(args) + '</span>'
+}
+
 export function redirectConsoleTo(logNode) {
-
-	var _log = console.log.bind(console)
-	var _error = console.error.bind(console)
-
-	var wrapLog = args => args.map(toString).join(' ') + '\n'
-
-	console.log = function log(...args) {
-		_log(...args)
-		logNode.textContent += wrapLog(args)
-	}
-
-	console.error = function error(...args) {
-		_error(...args)
-		logNode.textContent += wrapLog(args)
-		//logNode.textContent += '<span style="color: red">' + wrapLog(args) + '</span>'
-	}
-
+	console.log = log
+	console.error = error
 }
 
 // Copy Error's contents into a new object that can be stringified
@@ -95,8 +93,12 @@ export var logNode
 export var warningNode
 export var resultNode
 
+export var canRenderResult = false
+
 export function queryNodes() {
 	logNode = document.querySelector('#mouka-log')
 	warningNode = document.querySelector('#mouka-warning')
 	resultNode = document.querySelector('#mouka-result')
+	if (resultNode)
+		canRenderResult = true
 }

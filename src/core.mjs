@@ -81,7 +81,7 @@ export async function runAsCli() {
 	}
 	try {
 		// Run tests
-		var result = await suite.execute()
+		var result = await suite.run()
 		// Change cwd back to original location if the tests were executed in remote location.
 		if (runRemotely)
 			process.chdir(owd)
